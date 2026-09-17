@@ -1,9 +1,11 @@
 import os
 import json
+import time
 import feedparser
 import requests
 from google import genai
 from google.genai import types
+from google.genai.errors import APIError
 
 # ----------------- CONFIGURACIÓN DEL AGENTE -----------------
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
