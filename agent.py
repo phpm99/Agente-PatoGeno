@@ -3,12 +3,10 @@ import json
 import time
 import feedparser
 import requests
-from google import genai
-from google.genai import types
-from google.genai.errors import APIError
+from groq import Groq
 
 # ----------------- CONFIGURACIÓN DEL AGENTE -----------------
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 MEMORY_FILE = "seen_articles.json"
@@ -76,15 +74,14 @@ def load_seen_ids():
                     return set()
                 return set(json.loads(content))
         except json.JSONDecodeError:
-            print("Aviso: seen_articles.json corrupto o vacío. Reiniciando memoria.")
             return set()
     return set()
 
 def save_seen_ids(seen_ids):
     with open(MEMORY_FILE, "w") as f:
-        json.dump(list(seen_ids)[-500:], f)
+        json.dump(list(seen_ids)[-800:], f)
 
-def evaluate_with_ai(client: genai.Client, title: str, summary: str, retries: int = 2):
+def evaluate_with_ai(client: Groq, title: str, summary: str):
     prompt = f"""
     Eres un asistente de inteligencia curador de noticias.
     
@@ -95,34 +92,24 @@ def evaluate_with_ai(client: genai.Client, title: str, summary: str, retries: in
     - Título: {title}
     - Extracto: {summary}
     
-    Determina si esta noticia amerita una interrupción en el celular del usuario.
+    Determina si esta noticia amerita una notificación inmediata al usuario.
     Responde estrictamente en formato JSON con la siguiente estructura:
     {{
-      "relevant": true,
-      "reason": "Explicación en 1 o 2 oraciones de por qué le interesa al usuario.",
+      "relevant": true/false,
+      "reason": "Explicación breve de por qué le interesa al usuario.",
       "score": 8
     }}
     """
-    for attempt in range(retries + 1):
-        try:
-            response = client.models.generate_content(
-                model='gemini-3.6-flash',
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
-                )
-            )
-            return json.loads(response.text)
-        except APIError as e:
-            if e.code == 429 and attempt < retries:
-                print("Límite de cuota alcanzado (429). Esperando 25 segundos para reintentar...")
-                time.sleep(25)
-            else:
-                print(f"Error evaluando con IA: {e}")
-                return {"relevant": False}
-        except Exception as e:
-            print(f"Error inesperado: {e}")
-            return {"relevant": False}
+    try:
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"}
+        )
+        return json.loads(completion.choices[0].message.content)
+    except Exception as e:
+        print(f"Error evaluando con IA: {e}")
+        return {"relevant": False}
 
 def send_telegram(message: str):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -136,11 +123,10 @@ def send_telegram(message: str):
 def main():
     seen_ids = load_seen_ids()
     new_seen = set(seen_ids)
-    client = genai.Client(api_key=GEMINI_API_KEY)
+    client = Groq(api_key=GROQ_API_KEY)
     
     for feed_url in RSS_FEEDS:
         feed = feedparser.parse(feed_url)
-        # Evaluamos los primeros 5 artículos para no saturar la cuota gratuita
         for entry in feed.entries[:5]:
             entry_id = entry.get("id", entry.get("link", entry.get("title")))
             
@@ -152,7 +138,6 @@ def main():
             summary = entry.get("summary", "")
             link = entry.get("link", "")
             
-            # Evaluación con IA
             decision = evaluate_with_ai(client, title, summary)
             
             if decision.get("relevant") and decision.get("score", 0) >= 7:
@@ -167,8 +152,8 @@ def main():
             else:
                 print(f"Descartada: {title}")
             
-            # Pausa de seguridad para no superar las 5 peticiones por minuto
-            time.sleep(13)
+            # Con Groq basta esperar 2 segundos para no superar 30 RPM
+            time.sleep(2)
                 
     save_seen_ids(new_seen)
 
