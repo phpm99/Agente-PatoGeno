@@ -97,7 +97,7 @@ def evaluate_with_ai(client: Groq, title: str, summary: str):
     {{
       "relevant": true/false,
       "reason": "Explicación breve de por qué le interesa al usuario.",
-      "score": 8
+      "score": "número entero del 1 al 10 indicando el nivel de relevancia"
     }}
     """
     try:
