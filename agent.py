@@ -67,17 +67,22 @@ RSS_FEEDS = [
 
 def load_seen_ids():
     if os.path.exists(MEMORY_FILE):
-        with open(MEMORY_FILE, "r") as f:
-            return set(json.load(f))
+        try:
+            with open(MEMORY_FILE, "r") as f:
+                content = f.read().strip()
+                if not content:
+                    return set()
+                return set(json.loads(content))
+        except json.JSONDecodeError:
+            print("Aviso: seen_articles.json corrupto o vacío. Reiniciando memoria.")
+            return set()
     return set()
 
 def save_seen_ids(seen_ids):
-    # Guardamos los últimos 500 IDs para evitar saturar memoria
     with open(MEMORY_FILE, "w") as f:
         json.dump(list(seen_ids)[-500:], f)
 
-def evaluate_with_ai(client: genai.Client, title: str, summary: str):
-    """El agente razona si la noticia aporta valor al usuario y genera una justificación."""
+def evaluate_with_ai(client: genai.Client, title: str, summary: str, retries: int = 2):
     prompt = f"""
     Eres un asistente de inteligencia curador de noticias.
     
@@ -91,23 +96,31 @@ def evaluate_with_ai(client: genai.Client, title: str, summary: str):
     Determina si esta noticia amerita una interrupción en el celular del usuario.
     Responde estrictamente en formato JSON con la siguiente estructura:
     {{
-      "relevant": true/false,
+      "relevant": true,
       "reason": "Explicación en 1 o 2 oraciones de por qué le interesa al usuario.",
-      "score": número del 1 al 10 que represente el impacto/relevancia
+      "score": 8
     }}
     """
-    try:
-        response = client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
+    for attempt in range(retries + 1):
+        try:
+            response = client.models.generate_content(
+                model='gemini-3.6-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                )
             )
-        )
-        return json.loads(response.text)
-    except Exception as e:
-        print(f"Error evaluando con IA: {e}")
-        return {"relevant": False}
+            return json.loads(response.text)
+        except APIError as e:
+            if e.code == 429 and attempt < retries:
+                print("Límite de cuota alcanzado (429). Esperando 25 segundos para reintentar...")
+                time.sleep(25)
+            else:
+                print(f"Error evaluando con IA: {e}")
+                return {"relevant": False}
+        except Exception as e:
+            print(f"Error inesperado: {e}")
+            return {"relevant": False}
 
 def send_telegram(message: str):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -125,7 +138,8 @@ def main():
     
     for feed_url in RSS_FEEDS:
         feed = feedparser.parse(feed_url)
-        for entry in feed.entries[:10]:  # Evalúa los últimos 10 por feed
+        # Evaluamos los primeros 5 artículos para no saturar la cuota gratuita
+        for entry in feed.entries[:5]:
             entry_id = entry.get("id", entry.get("link", entry.get("title")))
             
             if entry_id in seen_ids:
@@ -136,10 +150,9 @@ def main():
             summary = entry.get("summary", "")
             link = entry.get("link", "")
             
-            # Razonamiento del Agente
+            # Evaluación con IA
             decision = evaluate_with_ai(client, title, summary)
             
-            # Acción
             if decision.get("relevant") and decision.get("score", 0) >= 7:
                 msg = (
                     f"🎯 *Relevancia ({decision.get('score')}/10)*\n\n"
@@ -151,6 +164,9 @@ def main():
                 print(f"Noticia enviada: {title}")
             else:
                 print(f"Descartada: {title}")
+            
+            # Pausa de seguridad para no superar las 5 peticiones por minuto
+            time.sleep(13)
                 
     save_seen_ids(new_seen)
 
