@@ -102,7 +102,7 @@ def evaluate_with_ai(client: Groq, title: str, summary: str):
     """
     try:
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="meta-llama/llama-prompt-guard-2-86m",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"}
         )
