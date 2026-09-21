@@ -135,9 +135,15 @@ def main():
             
             decision = evaluate_with_ai(client, title, summary)
             
-            if decision.get("relevant") and decision.get("score", 0) >= umbral_aprobacion:
+            # Conversión segura a número entero
+            try:
+                score = int(decision.get("score", 0))
+            except (ValueError, TypeError):
+                score = 0
+            
+            if decision.get("relevant") and score >= umbral_aprobacion:
                 msg = (
-                    f"🎯 *Relevancia ({decision.get('score')}/10)*\n\n"
+                    f"🎯 *Relevancia ({score}/10)*\n\n"
                     f"*{decision.get('title_es', title)}*\n\n"
                     f"📝 *Resumen:* {decision.get('summary')}\n\n"
                     f"{decision.get('tags', '')}\n\n"
