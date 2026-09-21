@@ -2,7 +2,7 @@ name: News Agent Runner
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '12,42 * * * *'
   workflow_dispatch:   # Permite ejecutarlo manualmente desde GitHub
 
 concurrency:
