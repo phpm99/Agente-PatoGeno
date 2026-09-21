@@ -16,24 +16,19 @@ USER_PROFILE = """
 Intereses clave:
 - Avances en Inteligencia Artificial aplicada, agentes autónomos, LLMs open-source y etica aplicada a la IA.
 - Avances cientificos con capacidad de alto impacto social.
-- Industria argentina, producción y empleo.
-- Microeconomía Argentina, endeudamiento y situacion de los hogares.
-- Cooperación internacional.
-- Tensiones geopolíticas globales.
+- Economía argentina, en particular industria, producción, empleo y situación de hogares.
+- Relaciones internacionales.
 - Salud pública, salud reproductiva y salud mental.
-- Educación, gratuidad y laicidad universitaria.
 - Políticas públicas.
 - NO me interesan: rumores de celebridades, política partidaria sin impacto macro, deportes generales.
+- SOLO cuando sean muy importantes: avances de conflictos bélicos en desarrollo, cotización del dolar en Argentina.
 """
 
 RSS_FEEDS = [
-    "https://www.clarin.com/rss/lo-ultimo/",
     "https://www.clarin.com/rss/politica/",
     "https://www.clarin.com/rss/mundo/",
-    "https://www.clarin.com/rss/sociedad/",
     "https://www.clarin.com/rss/economia/",
     "https://www.clarin.com/rss/tecnologia/",
-    "https://www.clarin.com/rss/internacional/",
     "batimes.com.ar/feed",
     "https://www.lanacion.com.ar/arc/outboundfeeds/rss",
     "perfil.com/feed",
@@ -41,21 +36,13 @@ RSS_FEEDS = [
     "https://www.lapoliticaonline.com/files/rss",
     "https://www.pagina12.com.ar/arc/outboundfeeds/rss/secciones/el-pais/notas",
     "https://www.pagina12.com.ar/arc/outboundfeeds/rss/secciones/economia/notas",
-    "https://www.pagina12.com.ar/arc/outboundfeeds/rss/secciones/sociedad/notas",
     "https://www.pagina12.com.ar/arc/outboundfeeds/rss/secciones/ciencia/notas",
     "https://www.pagina12.com.ar/arc/outboundfeeds/rss/secciones/universidad/notas",
-    "https://www.pagina12.com.ar/arc/outboundfeeds/rss/suplementos/cash/notas",
     "http://rss.dw.com/rdf/rss-sp-all",
     "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
-    "https://rss.nytimes.com/services/xml/rss/nyt/Americas.xml",
-    "https://rss.nytimes.com/services/xml/rss/nyt/SmallBusiness.xml",
-    "https://rss.nytimes.com/services/xml/rss/nyt/Economy.xml",
-    "https://rss.nytimes.com/services/xml/rss/nyt/EnergyEnvironment.xml",
     "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
     "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
     "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml",
-    "https://rss.nytimes.com/services/xml/rss/nyt/Climate.xml",
-    "http://www.bbc.co.uk/mundo/ultimas_noticias/index.xml",
     "http://www.bbc.co.uk/mundo/temas/internacional/index.xml",
     "http://www.bbc.co.uk/mundo/temas/america_latina/index.xml",
     "http://www.bbc.co.uk/mundo/temas/ciencia/index.xml",
@@ -95,8 +82,8 @@ def evaluate_with_ai(client: Groq, title: str, summary: str):
     Determina si esta noticia amerita una notificación inmediata al usuario.
     Responde estrictamente en formato JSON con la siguiente estructura:
     {{
-      "relevant": true/false,
-      "reason": "Explicación breve de por qué le interesa al usuario.",
+      "relevant": true,
+      "summary": "Resumen de la noticia en 2 o 3 oraciones enfocando en los datos principales.",
       "score": "número entero del 1 al 10 indicando el nivel de relevancia"
     }}
     """
@@ -125,7 +112,10 @@ def main():
     new_seen = set(seen_ids)
     client = Groq(api_key=GROQ_API_KEY)
     
-    for feed_url in RSS_FEEDS:
+  for feed_url in RSS_FEEDS:
+        # Define un umbral estricto (9) para fuentes ruidosas y uno base (8) para las demás
+        umbral_aprobacion = 9 if "clarin.com" in feed_url or "rt.com" in feed_url else 8
+        
         feed = feedparser.parse(feed_url)
         for entry in feed.entries[:5]:
             entry_id = entry.get("id", entry.get("link", entry.get("title")))
@@ -140,11 +130,12 @@ def main():
             
             decision = evaluate_with_ai(client, title, summary)
             
-            if decision.get("relevant") and decision.get("score", 0) >= 7:
+            # Aplica el umbral dinámico correspondiente a la fuente
+            if decision.get("relevant") and decision.get("score", 0) >= umbral_aprobacion:
                 msg = (
                     f"🎯 *Relevancia ({decision.get('score')}/10)*\n\n"
                     f"*{title}*\n\n"
-                    f"💡 *Por qué te interesa:* {decision.get('reason')}\n\n"
+                    f"📝 *Resumen:* {decision.get('summary')}\n\n"
                     f"🔗 [Leer artículo]({link})"
                 )
                 send_telegram(msg)
@@ -152,10 +143,6 @@ def main():
             else:
                 print(f"Descartada: {title}")
             
-            # Con Groq basta esperar 2 segundos para no superar 30 RPM
             time.sleep(2)
                 
     save_seen_ids(new_seen)
-
-if __name__ == "__main__":
-    main()
