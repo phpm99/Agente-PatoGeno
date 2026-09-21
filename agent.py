@@ -76,20 +76,26 @@ def evaluate_with_ai(client: Groq, title: str, summary: str):
     {USER_PROFILE}
     
     Noticia a evaluar:
-    - Título: {title}
-    - Extracto: {summary}
+    - Título original: {title}
+    - Extracto original: {summary}
     
-    Determina si esta noticia amerita una notificación inmediata al usuario.
+    Determina si esta noticia amerita una notificación. 
+    INSTRUCCIONES DE FORMATO:
+    1. Si la noticia está en inglés, traduce el título y el resumen al español. Si ya está en español, mantenlos así.
+    2. Crea entre 2 y 3 hashtags precisos sobre la temática (ej: #Startups #Regulación #Deuda).
+    
     Responde estrictamente en formato JSON con la siguiente estructura:
     {{
       "relevant": true,
-      "summary": "Resumen de la noticia en 2 o 3 oraciones enfocando en los datos principales.",
-      "score": "número entero del 1 al 10 indicando el nivel de relevancia"
+      "title_es": "Título en español",
+      "summary": "Resumen de la noticia en español en 2 o 3 oraciones.",
+      "tags": "#Hashtag1 #Hashtag2",
+      "score": "número entero del 1 al 10"
     }}
     """
     try:
         completion = client.chat.completions.create(
-            model="openai/gpt-oss-20b",
+            model="llama-3.1-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"}
         )
@@ -112,9 +118,8 @@ def main():
     new_seen = set(seen_ids)
     client = Groq(api_key=GROQ_API_KEY)
     
-  for feed_url in RSS_FEEDS:
-        # Define un umbral estricto (9) para fuentes ruidosas y uno base (8) para las demás
-        umbral_aprobacion = 9 if "clarin.com" in feed_url or "rt.com" in feed_url else 8
+    for feed_url in RSS_FEEDS:
+        umbral_aprobacion = 9 if "rt.com" in feed_url else 8
         
         feed = feedparser.parse(feed_url)
         for entry in feed.entries[:5]:
@@ -130,12 +135,12 @@ def main():
             
             decision = evaluate_with_ai(client, title, summary)
             
-            # Aplica el umbral dinámico correspondiente a la fuente
             if decision.get("relevant") and decision.get("score", 0) >= umbral_aprobacion:
                 msg = (
                     f"🎯 *Relevancia ({decision.get('score')}/10)*\n\n"
-                    f"*{title}*\n\n"
+                    f"*{decision.get('title_es', title)}*\n\n"
                     f"📝 *Resumen:* {decision.get('summary')}\n\n"
+                    f"{decision.get('tags', '')}\n\n"
                     f"🔗 [Leer artículo]({link})"
                 )
                 send_telegram(msg)
@@ -146,3 +151,6 @@ def main():
             time.sleep(2)
                 
     save_seen_ids(new_seen)
+
+if __name__ == "__main__":
+    main()
