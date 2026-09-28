@@ -151,13 +151,14 @@ def main():
             
             if entry_id in seen_ids:
                 continue
-
-            if any(word in title.lower() for word in BANNED_WORDS):
-                print(f"Descartada por filtro local (ahorro token): {title}")
-                continue
             
             new_seen.add(entry_id)
             title = entry.get("title", "")
+            
+            if any(word in title.lower() for word in BANNED_WORDS):
+                print(f"Descartada por filtro local (ahorro token): {title}")
+                continue
+
             summary = entry.get("summary", "")
             link = entry.get("link", "")
             
