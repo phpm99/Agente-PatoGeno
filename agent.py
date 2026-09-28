@@ -4,6 +4,8 @@ import time
 import feedparser
 import requests
 from groq import Groq
+from datetime import datetime
+import pytz
 
 # ----------------- CONFIGURACIÓN DEL AGENTE -----------------
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -11,7 +13,19 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 MEMORY_FILE = "seen_articles.json"
 
-# Perfil del usuario (puedes ser tan descriptivo como quieras)
+# Palabras filtradas para reducir el gasto de tokens
+BANNED_WORDS = [
+    "gran hermano", "bake off", "wanda", "l-gante", "pampita", 
+    "chimento", "escándalo", "fútbol", "boca", "river", "messi",
+    "TV", "polémica", "robo", "racing", "independiente", "copa",
+    "seleccion", "hinchas", "VIVO", "Yamal", "Galaxy", "iphone"
+    "Guinness", "cotización", "lali", "tini", "emilia", "prefabricada",
+    "maraton", "turistas", "premios", "vestidos", "princesa", "princesas",
+    "Schwarzenegger", "humor", "monumento", "viral", "remontada", "clasico",
+    "Del Moro", "videos", "var", "FIA", "Colapintos", "GP",
+]
+
+# Perfil del usuario
 USER_PROFILE = """
 Intereses clave:
 - Avances en Inteligencia Artificial aplicada, agentes autónomos, LLMs open-source y etica aplicada a la IA.
@@ -20,10 +34,12 @@ Intereses clave:
 - Relaciones internacionales.
 - Salud pública, salud reproductiva y salud mental.
 - Políticas públicas.
+- Derecho a la vivienda.
 - NO me interesan: rumores de celebridades, política partidaria sin impacto macro, deportes generales.
 - SOLO cuando sean muy importantes: avances de conflictos bélicos en desarrollo, cotización del dolar en Argentina.
 """
 
+# Feeds RSS
 RSS_FEEDS = [
     "https://www.clarin.com/rss/politica/",
     "https://www.clarin.com/rss/mundo/",
@@ -48,7 +64,6 @@ RSS_FEEDS = [
     "http://www.bbc.co.uk/mundo/temas/ciencia/index.xml",
     "https://actualidad.rt.com/feeds/all.rss",
     "https://mondiplo.com/?page=backend", 
-    # Agrega aquí los feeds RSS de tus portales favoritos
 ]
 # ------------------------------------------------------------
 
@@ -106,10 +121,19 @@ def evaluate_with_ai(client: Groq, title: str, summary: str):
 
 def send_telegram(message: str):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    
+    # Evalúa la hora actual en Argentina
+    tz = pytz.timezone('America/Argentina/Buenos_Aires')
+    hora_arg = datetime.now(tz).hour
+    
+    # Silenciar notificaciones si es entre la medianoche (0) y las 9 AM
+    silenciar = True if (0 <= hora_arg <= 9) else False
+    
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": message,
-        "parse_mode": "Markdown"
+        "parse_mode": "Markdown",
+        "disable_notification": silenciar
     }
     requests.post(url, json=payload)
 
@@ -126,6 +150,10 @@ def main():
             entry_id = entry.get("id", entry.get("link", entry.get("title")))
             
             if entry_id in seen_ids:
+                continue
+
+            if any(word in title.lower() for word in BANNED_WORDS):
+                print(f"Descartada por filtro local (ahorro token): {title}")
                 continue
             
             new_seen.add(entry_id)
