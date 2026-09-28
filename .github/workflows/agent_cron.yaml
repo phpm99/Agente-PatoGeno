@@ -23,7 +23,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install feedparser requests groq
+          pip install feedparser requests groq pytz
 
       - name: Run Agent
         env:
